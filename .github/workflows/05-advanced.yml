@@ -1,0 +1,147 @@
+# Шаг 5: Продвинутые возможности
+# Демонстрирует работу с секретами, переменными окружения,
+# условным выполнением и интеграцией с внешними сервисами
+
+name: 05 - Продвинутые возможности
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+  schedule:
+    # Запуск каждый день в 2:00 UTC
+    - cron: '0 2 * * *'
+
+# Переменные окружения на уровне workflow
+env:
+  APP_NAME: calculator-api
+  ENVIRONMENT: development
+
+jobs:
+  advanced-features:
+    runs-on: ubuntu-latest
+    
+    # Условие выполнения job
+    if: github.event_name == 'push' || github.event_name == 'pull_request'
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          # Полная история для корректной работы с коммитами
+          fetch-depth: 0
+      
+      - name: Информация о контексте
+        run: |
+          echo "🔍 Информация о запуске"
+          echo "Event: ${{ github.event_name }}"
+          echo "Actor: ${{ github.actor }}"
+          echo "Branch: ${{ github.ref_name }}"
+          echo "Commit: ${{ github.sha }}"
+          echo "Repository: ${{ github.repository }}"
+      
+      - name: Установка Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      
+      # Использование секретов (в реальном проекте)
+      # - name: Login to Docker Hub
+      #   if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+      #   uses: docker/login-action@v3
+      #   with:
+      #     username: ${{ secrets.DOCKERHUB_USERNAME }}
+      #     password: ${{ secrets.DOCKERHUB_TOKEN }}
+      
+      - name: Условное выполнение для main ветки
+        if: github.ref == 'refs/heads/main'
+        run: |
+          echo "✅ Выполнение для production ветки"
+          echo "Можно выполнять деплой на production"
+      
+      - name: Условное выполнение для PR
+        if: github.event_name == 'pull_request'
+        run: |
+          echo "🔄 Pull Request обнаружен"
+          echo "PR Number: ${{ github.event.pull_request.number }}"
+          echo "PR Title: ${{ github.event.pull_request.title }}"
+      
+      - name: Установка зависимостей
+        run: |
+          pip install -r requirements.txt
+      
+      - name: Запуск тестов с параллельностью
+        run: |
+          pytest tests/ -v -n auto --dist loadscope
+      
+      # Создание Release Notes
+      - name: Генерация Release Notes
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          echo "# Release Notes" > release-notes.md
+          echo "" >> release-notes.md
+          echo "## Commit: ${{ github.sha }}" >> release-notes.md
+          echo "## Author: ${{ github.actor }}" >> release-notes.md
+          echo "" >> release-notes.md
+          git log --oneline -10 >> release-notes.md
+      
+      - name: Загрузка Release Notes
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-notes
+          path: release-notes.md
+      
+      # Отправка уведомления (заглушка)
+      - name: Уведомление об успехе
+        if: success()
+        run: |
+          echo "✅ Pipeline успешно завершен!"
+          # В реальном проекте здесь может быть:
+          # - Отправка в Slack
+          # - Отправка в Telegram
+          # - Email уведомление
+      
+      - name: Уведомление об ошибке
+        if: failure()
+        run: |
+          echo "❌ Pipeline завершился с ошибкой!"
+          echo "Необходимо проверить логи"
+
+  # Job для демонстрации работы с переменными
+  environment-demo:
+    runs-on: ubuntu-latest
+    
+    # Переменные окружения на уровне job
+    env:
+      JOB_VARIABLE: "job-level-value"
+    
+    steps:
+      - name: Вывод переменных окружения
+        run: |
+          echo "Workflow variable: ${{ env.APP_NAME }}"
+          echo "Job variable: ${{ env.JOB_VARIABLE }}"
+        env:
+          # Переменная на уровне step
+          STEP_VARIABLE: "step-level-value"
+      
+      - name: Работа с GitHub контекстами
+        run: |
+          echo "Repository Owner: ${{ github.repository_owner }}"
+          echo "Workflow: ${{ github.workflow }}"
+          echo "Run ID: ${{ github.run_id }}"
+          echo "Run Number: ${{ github.run_number }}"
+
+  # Job для демонстрации timeout и retry
+  timeout-demo:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10  # Максимальное время выполнения
+    
+    steps:
+      - name: Задача с таймаутом
+        timeout-minutes: 5
+        run: |
+          echo "Эта задача не может выполняться дольше 5 минут"
+          sleep 2
+          echo "Готово!"

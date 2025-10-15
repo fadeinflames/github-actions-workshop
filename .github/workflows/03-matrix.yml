@@ -1,0 +1,66 @@
+# Шаг 3: Матричное тестирование
+# Демонстрирует параллельный запуск на разных версиях Python и ОС
+
+name: 03 - Матричное тестирование
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test-matrix:
+    # Матричная стратегия для тестирования
+    strategy:
+      # Не останавливать другие задачи при ошибке в одной
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        python-version: ['3.9', '3.10', '3.11', '3.12']
+        # Исключаем некоторые комбинации для экономии ресурсов
+        exclude:
+          - os: macos-latest
+            python-version: '3.9'
+          - os: windows-latest
+            python-version: '3.9'
+    
+    runs-on: ${{ matrix.os }}
+    
+    # Имя задачи будет включать версию Python и ОС
+    name: Test on ${{ matrix.os }} with Python ${{ matrix.python-version }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Установка Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      
+      - name: Информация о Python
+        run: |
+          python --version
+          pip --version
+      
+      - name: Установка зависимостей
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      
+      - name: Запуск тестов
+        run: |
+          pytest tests/ -v
+      
+      - name: Тесты с покрытием (только Ubuntu + Python 3.11)
+        if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.11'
+        run: |
+          pytest tests/ --cov=app --cov-report=xml --cov-report=html
+      
+      - name: Загрузка отчета о покрытии
+        if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.11'
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report-matrix
+          path: htmlcov/

@@ -1,0 +1,194 @@
+# Шаг 4: Production-ready pipeline
+# Демонстрирует зависимости между jobs, параллельное выполнение, 
+# работу с Docker и артефактами
+
+name: 04 - Production CI/CD
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:  # Ручной запуск
+
+# Переменные окружения для всего workflow
+env:
+  PYTHON_VERSION: '3.11'
+  DOCKER_IMAGE_NAME: calculator-api
+
+jobs:
+  # Job 1: Проверка кода
+  code-quality:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Установка Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      
+      - name: Установка инструментов проверки кода
+        run: |
+          pip install flake8 black isort pylint
+      
+      - name: Проверка форматирования (black)
+        run: black --check app/ tests/
+        continue-on-error: true
+      
+      - name: Проверка импортов (isort)
+        run: isort --check-only app/ tests/
+        continue-on-error: true
+      
+      - name: Линтер (flake8)
+        run: flake8 app/ tests/ --max-line-length=127
+        continue-on-error: true
+  
+  # Job 2: Unit тесты
+  unit-tests:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Установка Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+      
+      - name: Установка зависимостей
+        run: |
+          pip install -r requirements.txt
+      
+      - name: Запуск unit тестов
+        run: |
+          pytest tests/test_calculator.py -v --junitxml=test-results/unit-tests.xml
+      
+      - name: Публикация результатов тестов
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: unit-test-results
+          path: test-results/
+  
+  # Job 3: Integration тесты (запускается параллельно с unit)
+  integration-tests:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Установка Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+      
+      - name: Установка зависимостей
+        run: |
+          pip install -r requirements.txt
+      
+      - name: Запуск integration тестов
+        run: |
+          pytest tests/test_api.py -v --junitxml=test-results/integration-tests.xml
+      
+      - name: Публикация результатов тестов
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: integration-test-results
+          path: test-results/
+  
+  # Job 4: Тесты покрытия (зависит от успешного выполнения предыдущих)
+  coverage:
+    needs: [unit-tests, integration-tests]
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Установка Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+      
+      - name: Установка зависимостей
+        run: |
+          pip install -r requirements.txt
+      
+      - name: Генерация отчета о покрытии
+        run: |
+          pytest tests/ --cov=app --cov-report=html --cov-report=xml --cov-report=term
+      
+      - name: Проверка порога покрытия
+        run: |
+          coverage report --fail-under=80
+      
+      - name: Загрузка отчета о покрытии
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: |
+            htmlcov/
+            coverage.xml
+  
+  # Job 5: Сборка Docker образа (зависит от тестов)
+  build-docker:
+    needs: [code-quality, unit-tests, integration-tests]
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Установка Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      
+      - name: Сборка Docker образа
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: false
+          tags: ${{ env.DOCKER_IMAGE_NAME }}:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      
+      - name: Тест Docker образа
+        run: |
+          docker build -t ${{ env.DOCKER_IMAGE_NAME }}:test .
+          docker run -d -p 5000:5000 --name test-container ${{ env.DOCKER_IMAGE_NAME }}:test
+          sleep 5
+          curl -f http://localhost:5000/health || exit 1
+          docker stop test-container
+  
+  # Job 6: Финальная проверка и деплой (только для main ветки)
+  deploy-check:
+    needs: [coverage, build-docker]
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Скачивание всех артефактов
+        uses: actions/download-artifact@v4
+      
+      - name: Список артефактов
+        run: |
+          echo "Собранные артефакты:"
+          ls -R
+      
+      - name: Деплой (заглушка)
+        run: |
+          echo "🚀 Все проверки пройдены!"
+          echo "📦 Можно деплоить на production"
+          echo "Commit: ${{ github.sha }}"
+          echo "Author: ${{ github.actor }}"

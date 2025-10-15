@@ -1,0 +1,35 @@
+# Шаг 1: Простейший workflow
+# Демонстрирует базовую структуру и синтаксис
+
+name: 01 - Базовый CI
+
+# Триггеры: когда запускается workflow
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+# Задачи (jobs), которые будут выполняться
+jobs:
+  hello-world:
+    # Виртуальная машина для выполнения
+    runs-on: ubuntu-latest
+    
+    # Шаги выполнения
+    steps:
+      # Чекаут кода из репозитория
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      # Простая команда
+      - name: Приветствие
+        run: echo "Привет от GitHub Actions!"
+      
+      # Вывод информации о системе
+      - name: Информация о системе
+        run: |
+          echo "OS: ${{ runner.os }}"
+          echo "Runner: ${{ runner.name }}"
+          echo "Репозиторий: ${{ github.repository }}"
+          echo "Ветка: ${{ github.ref }}"
